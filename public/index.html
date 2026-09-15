@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="session-key" content="__MEDIA_STUDIO_KEY__">
+  <title>Media Studio — local FFmpeg</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">◈</span><span>MEDIA<span class="brand-muted">/</span>STUDIO</span><span class="local-pill">LOCAL ONLY</span></div>
+      <div class="engine-status" id="engine-status"><span class="status-dot"></span><span>Checking FFmpeg…</span></div>
+    </header>
+    <main class="workspace">
+      <aside class="library panel">
+        <div class="panel-heading"><div><div class="eyebrow">Workspace</div><h2>Library</h2></div><span class="count" id="source-count">0</span></div>
+        <label class="import-zone" id="drop-zone" for="file-picker">
+          <span class="upload-icon">↑</span><strong>Import media</strong><span>Drop files here or browse</span><small>Audio & video · up to 500 MB</small>
+          <input id="file-picker" type="file" accept="audio/*,video/*">
+        </label>
+        <div class="upload-progress hidden" id="upload-progress"><div class="progress-label"><span id="upload-name">Uploading…</span><span id="upload-percent">0%</span></div><div class="progress-track"><i id="upload-bar"></i></div></div>
+        <div class="source-list" id="source-list"><div class="empty-list">Your imported files<br><span>will appear here</span></div></div>
+        <div class="privacy-note"><span>⌂</span><span>Files stay on this computer.<br>Nothing is uploaded to a cloud.</span></div>
+      </aside>
+      <section class="preview panel">
+        <div class="preview-header"><div><div class="eyebrow">Preview</div><h2 id="preview-title">Select a file to begin</h2></div><span class="format-badge" id="preview-format">—</span></div>
+        <div class="stage" id="stage">
+          <div class="stage-empty" id="stage-empty"><div class="empty-orbit"><span>▶</span></div><h3>Your media, in focus</h3><p>Import a file from your computer<br>to preview it here.</p></div>
+          <video id="video-player" controls playsinline class="hidden"></video><audio id="audio-player" controls class="hidden"></audio>
+        </div>
+        <div class="media-meta" id="media-meta"><span>—</span><span>—</span><span>—</span></div>
+      </section>
+      <aside class="controls panel">
+        <div class="eyebrow">Output</div><h2>Make something</h2>
+        <div class="preset-grid"><button class="preset active" data-operation="convert"><span class="preset-icon">▣</span><span><strong>MP4 video</strong><small>H.264 · broadly compatible</small></span><b>⌘</b></button><button class="preset" data-operation="mp3"><span class="preset-icon">♫</span><span><strong>MP3 audio</strong><small>High quality · compact</small></span><b>⌘</b></button></div>
+        <div class="trim-heading"><div><div class="eyebrow">Trim range</div><strong>Keep the good part</strong></div><button id="reset-trim" class="text-button">Reset</button></div>
+        <div class="trim-fields"><label>START<input id="trim-start" type="number" min="0" step="0.1" value="0"><span>s</span></label><div class="trim-dash">—</div><label>END<input id="trim-end" type="number" min="0" step="0.1" placeholder="Full length"><span>s</span></label></div>
+        <div class="trim-line"><i id="trim-fill"></i><b></b><b></b></div>
+        <button id="create-job" class="primary-button" disabled><span>＋</span> Add to queue</button><p class="hint" id="control-hint">Import a file to unlock output controls.</p>
+        <div class="output-note"><span>✦</span><span>Original file is always preserved.<br>Outputs use a unique filename.</span></div>
+      </aside>
+    </main>
+    <section class="queue panel"><div class="queue-heading"><div><div class="eyebrow">Activity</div><h2>Job queue</h2></div><span class="queue-live"><i></i> LIVE</span></div><div id="job-list" class="job-list"><div class="queue-empty"><span>☷</span><strong>Queue is clear</strong><small>Outputs you create will show up here.</small></div></div></section>
+    <footer><span>MEDIA/STUDIO <em>·</em> runs on your machine</span><span id="footer-engine">FFmpeg engine · checking</span></footer>
+  </div>
+  <div class="toast hidden" id="toast"></div>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

@@ -1,51 +1,60 @@
 <!doctype html>
-<html lang="en">
+<html lang="tr">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="session-key" content="__MEDIA_STUDIO_KEY__">
-  <title>Media Studio — local FFmpeg</title>
+  <title>Media Studio — yerel FFmpeg</title>
   <link rel="stylesheet" href="/assets/styles.css">
+  <link rel="stylesheet" href="/assets/enhancements.css">
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
-      <div class="brand"><span class="brand-mark">◈</span><span>MEDIA<span class="brand-muted">/</span>STUDIO</span><span class="local-pill">LOCAL ONLY</span></div>
-      <div class="engine-status" id="engine-status"><span class="status-dot"></span><span>Checking FFmpeg…</span></div>
+      <div class="brand"><span class="brand-mark">◈</span><span>MEDIA<span class="brand-muted">/</span>STUDIO</span><span class="local-pill">YALNIZCA YERELDE</span></div>
+      <div class="engine-status" id="engine-status" role="status" aria-live="polite"><span class="status-dot"></span><span>FFmpeg kontrol ediliyor…</span></div>
     </header>
     <main class="workspace">
       <aside class="library panel">
-        <div class="panel-heading"><div><div class="eyebrow">Workspace</div><h2>Library</h2></div><span class="count" id="source-count">0</span></div>
+        <div class="panel-heading"><div><div class="eyebrow">Çalışma alanı</div><h2>Dosyalar</h2></div><span class="count" id="source-count">0</span></div>
         <label class="import-zone" id="drop-zone" for="file-picker">
-          <span class="upload-icon">↑</span><strong>Import media</strong><span>Drop files here or browse</span><small>Audio & video · up to 500 MB</small>
+          <span class="upload-icon">↑</span><strong>Dosya ekle</strong><span>Dosyayı buraya bırak veya bilgisayardan seç</span><small>Ses ve video · en fazla 500 MB</small>
           <input id="file-picker" type="file" accept="audio/*,video/*">
         </label>
-        <div class="upload-progress hidden" id="upload-progress"><div class="progress-label"><span id="upload-name">Uploading…</span><span id="upload-percent">0%</span></div><div class="progress-track"><i id="upload-bar"></i></div></div>
-        <div class="source-list" id="source-list"><div class="empty-list">Your imported files<br><span>will appear here</span></div></div>
-        <div class="privacy-note"><span>⌂</span><span>Files stay on this computer.<br>Nothing is uploaded to a cloud.</span></div>
+        <div class="upload-progress hidden" id="upload-progress" role="status" aria-live="polite"><div class="progress-label"><span id="upload-name">Yükleniyor…</span><span id="upload-percent">0%</span></div><div class="progress-track"><i id="upload-bar"></i></div></div>
+        <div class="source-list" id="source-list"><div class="empty-list">Eklediğiniz dosyalar<br><span>burada görünecek</span></div></div>
+        <div class="privacy-note"><span>⌂</span><span>Dosyalar bu bilgisayarda kalır.<br>Buluta gönderilmez.</span></div>
       </aside>
       <section class="preview panel">
-        <div class="preview-header"><div><div class="eyebrow">Preview</div><h2 id="preview-title">Select a file to begin</h2></div><span class="format-badge" id="preview-format">—</span></div>
+        <div class="preview-header"><div><div class="eyebrow">Önizleme</div><h2 id="preview-title">Başlamak için bir dosya seçin</h2></div><span class="format-badge" id="preview-format">—</span></div>
         <div class="stage" id="stage">
-          <div class="stage-empty" id="stage-empty"><div class="empty-orbit"><span>▶</span></div><h3>Your media, in focus</h3><p>Import a file from your computer<br>to preview it here.</p></div>
+          <div class="stage-empty" id="stage-empty"><div class="empty-orbit"><span>▶</span></div><h3>Medyanız burada</h3><p>Önizlemek için bilgisayarınızdan<br>bir dosya ekleyin.</p></div>
           <video id="video-player" controls playsinline class="hidden"></video><audio id="audio-player" controls class="hidden"></audio>
+          <div class="preview-error hidden" id="preview-error" role="alert"><strong>Bu dosya tarayıcıda oynatılamadı</strong><p id="preview-error-text">Uyumlu bir çıktı oluşturabilirsiniz.</p><button type="button" id="convert-preview" class="secondary-button">Uyumlu MP4 oluştur</button></div>
         </div>
-        <div class="media-meta" id="media-meta"><span>—</span><span>—</span><span>—</span></div>
+        <dl class="media-meta" id="media-meta">
+          <div><dt>Süre</dt><dd id="meta-duration">—</dd></div><div><dt>Format</dt><dd id="meta-format">—</dd></div><div><dt>Çözünürlük</dt><dd id="meta-resolution">—</dd></div>
+          <div><dt>FPS</dt><dd id="meta-fps">—</dd></div><div><dt>Video codec</dt><dd id="meta-video-codec">—</dd></div><div><dt>Ses codec</dt><dd id="meta-audio-codec">—</dd></div>
+        </dl>
       </section>
       <aside class="controls panel">
-        <div class="eyebrow">Output</div><h2>Make something</h2>
-        <div class="preset-grid"><button class="preset active" data-operation="convert"><span class="preset-icon">▣</span><span><strong>MP4 video</strong><small>H.264 · broadly compatible</small></span><b>⌘</b></button><button class="preset" data-operation="mp3"><span class="preset-icon">♫</span><span><strong>MP3 audio</strong><small>High quality · compact</small></span><b>⌘</b></button></div>
-        <div class="trim-heading"><div><div class="eyebrow">Trim range</div><strong>Keep the good part</strong></div><button id="reset-trim" class="text-button">Reset</button></div>
-        <div class="trim-fields"><label>START<input id="trim-start" type="number" min="0" step="0.1" value="0"><span>s</span></label><div class="trim-dash">—</div><label>END<input id="trim-end" type="number" min="0" step="0.1" placeholder="Full length"><span>s</span></label></div>
-        <div class="trim-line"><i id="trim-fill"></i><b></b><b></b></div>
-        <button id="create-job" class="primary-button" disabled><span>＋</span> Add to queue</button><p class="hint" id="control-hint">Import a file to unlock output controls.</p>
-        <div class="output-note"><span>✦</span><span>Original file is always preserved.<br>Outputs use a unique filename.</span></div>
+        <div class="eyebrow">Çıktı</div><h2>İşlem seçin</h2>
+        <div class="preset-grid"><button type="button" class="preset active" data-operation="convert" aria-pressed="true"><span class="preset-icon">▣</span><span><strong>MP4 video</strong><small>H.264 · geniş uyumluluk</small></span></button><button type="button" class="preset" data-operation="mp3" aria-pressed="false"><span class="preset-icon">♫</span><span><strong>MP3 ses</strong><small>Yüksek kalite · küçük dosya</small></span></button></div>
+        <div class="trim-heading"><div><div class="eyebrow">Kırpma aralığı</div><strong>Saklanacak bölümü seçin</strong></div><button type="button" id="reset-trim" class="text-button">Sıfırla</button></div>
+        <div class="trim-fields">
+          <label for="trim-start">BAŞLANGIÇ<div class="number-field"><input id="trim-start" type="number" min="0" step="0.1" value="0" aria-describedby="trim-start-error" aria-invalid="false"><span>sn</span></div><small class="field-error" id="trim-start-error" role="alert"></small></label>
+          <div class="trim-dash">—</div>
+          <label for="trim-end">BİTİŞ<div class="number-field"><input id="trim-end" type="number" min="0" step="0.1" placeholder="Dosya sonu" aria-describedby="trim-end-error" aria-invalid="false"><span>sn</span></div><small class="field-error" id="trim-end-error" role="alert"></small></label>
+        </div>
+        <div class="trim-line" aria-hidden="true"><i id="trim-fill"></i></div><p class="trim-summary" id="trim-summary" aria-live="polite"></p>
+        <button type="button" id="create-job" class="primary-button" disabled><span>＋</span> İşlemi kuyruğa ekle</button><p class="hint" id="control-hint">Çıktı seçenekleri için bir dosya ekleyin.</p>
+        <div class="output-note"><span>✦</span><span>Orijinal dosya korunur.<br>Çıktı ayrı bir dosya olarak oluşturulur.</span></div>
       </aside>
     </main>
-    <section class="queue panel"><div class="queue-heading"><div><div class="eyebrow">Activity</div><h2>Job queue</h2></div><span class="queue-live"><i></i> LIVE</span></div><div id="job-list" class="job-list"><div class="queue-empty"><span>☷</span><strong>Queue is clear</strong><small>Outputs you create will show up here.</small></div></div></section>
-    <footer><span>MEDIA/STUDIO <em>·</em> runs on your machine</span><span id="footer-engine">FFmpeg engine · checking</span></footer>
+    <section class="queue panel"><div class="queue-heading"><div><div class="eyebrow">İşlemler</div><h2>İş kuyruğu</h2></div><span class="queue-live"><i></i> CANLI</span></div><div id="job-list" class="job-list" aria-live="polite"><div class="queue-empty"><span>☷</span><strong>Kuyruk boş</strong><small>Oluşturduğunuz çıktılar burada görünecek.</small></div></div></section>
+    <footer><span>MEDIA/STUDIO <em>·</em> bilgisayarınızda çalışır</span><span id="footer-engine">FFmpeg motoru · kontrol ediliyor</span></footer>
   </div>
-  <div class="toast hidden" id="toast"></div>
+  <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
   <script src="/assets/app.js"></script>
 </body>
 </html>

@@ -2,9 +2,10 @@
 
 /** @typedef {"convert" | "mp3"} JobOperation */
 /** @typedef {"queued" | "running" | "done" | "failed" | "cancelled"} JobStatus */
-/** @typedef {{codec:string,width:number,height:number}} VideoStream */
+/** @typedef {{codec:string,width:number,height:number,fps:number|null}} VideoStream */
 /** @typedef {{codec:string,channels:number,sampleRate:number}} AudioStream */
-/** @typedef {{id:string,originalName:string,mediaType:string,size:number,duration:number,format:string,video:VideoStream|null,audio:AudioStream|null}} SourceView */
+/** @typedef {"playable" | "uncertain" | "convert-recommended"} Compatibility */
+/** @typedef {{id:string,originalName:string,mediaType:string,size:number,duration:number,format:string,video:VideoStream|null,audio:AudioStream|null,compatibility:Compatibility}} SourceView */
 /** @typedef {{id:string,sourceId:string,operation:JobOperation,start:number,end:number|null,status:JobStatus,progress:number,outputName:string|null,error:string|null,downloadUrl:string|null}} JobView */
 /** @typedef {{ffmpeg?:boolean,ffprobe?:boolean,sources?:SourceView[],jobs?:JobView[],source?:SourceView,job?:JobView,error?:string}} ApiResponse */
 
@@ -31,6 +32,25 @@ const audioPlayer = /** @type {HTMLAudioElement} */ (byId("audio-player"));
 const trimStart = /** @type {HTMLInputElement} */ (byId("trim-start"));
 const trimEnd = /** @type {HTMLInputElement} */ (byId("trim-end"));
 const createJobButton = /** @type {HTMLButtonElement} */ (byId("create-job"));
+const previewError = byId("preview-error");
+const convertPreview = /** @type {HTMLButtonElement} */ (byId("convert-preview"));
+const trimStartError = byId("trim-start-error");
+const trimEndError = byId("trim-end-error");
+const trimSummary = byId("trim-summary");
+const presetButtons = /** @type {NodeListOf<HTMLButtonElement>} */ (document.querySelectorAll(".preset"));
+
+const compatibilityText = {
+  playable: "Tarayıcıda oynatılabilir",
+  uncertain: "Önizleme desteği belirsiz",
+  "convert-recommended": "Uyumlu MP4 önerilir"
+};
+const statusText = {
+  queued: "Sırada",
+  running: "İşleniyor",
+  done: "İndirmeye hazır",
+  failed: "İşlem başarısız",
+  cancelled: "İptal edildi"
+};
 
 /** @type {SourceView[]} */
 let sources = [];
@@ -79,11 +99,11 @@ function safe(value) {
 function renderSources() {
   byId("source-count").textContent = String(sources.length);
   if (!sources.length) {
-    sourceList.innerHTML = '<div class="empty-list">Your imported files<br><span>will appear here</span></div>';
+    sourceList.innerHTML = '<div class="empty-list">Eklediğiniz dosyalar<br><span>burada görünecek</span></div>';
     return;
   }
   sourceList.innerHTML = sources.map((source) => `
-    <button class="source-card ${selected?.id === source.id ? "selected" : ""}" data-id="${source.id}">
+    <button type="button" class="source-card ${selected?.id === source.id ? "selected" : ""}" data-id="${source.id}">
       <span class="source-type">${source.video ? "▶" : "♫"}</span>
       <span class="source-info"><strong>${safe(source.originalName)}</strong><small>${duration(source.duration)} · ${bytes(source.size)}</small></span>
     </button>`).join("");
@@ -103,8 +123,14 @@ function selectSource(source) {
   }
   byId("preview-title").textContent = source.originalName;
   byId("preview-format").textContent = source.format.split(",")[0] ?? "unknown";
-  byId("media-meta").innerHTML = `<span>${duration(source.duration)}</span><span>${source.video ? `${source.video.width} × ${source.video.height}` : "Audio only"}</span><span>${safe(source.video?.codec ?? source.audio?.codec ?? "Unknown codec")}</span>`;
+  byId("meta-duration").textContent = duration(source.duration);
+  byId("meta-format").textContent = source.format.split(",")[0] ?? "Bilinmiyor";
+  byId("meta-resolution").textContent = source.video ? `${source.video.width} × ${source.video.height}` : "Yalnızca ses";
+  byId("meta-fps").textContent = source.video?.fps ? String(Number(source.video.fps.toFixed(2))) : "—";
+  byId("meta-video-codec").textContent = source.video?.codec ?? "—";
+  byId("meta-audio-codec").textContent = source.audio?.codec ?? "—";
   byId("stage-empty").classList.add("hidden");
+  previewError.classList.add("hidden");
   videoPlayer.pause();
   audioPlayer.pause();
   if (source.video) {
@@ -118,13 +144,6 @@ function selectSource(source) {
     audioPlayer.src = `/media/${source.id}?key=${encodeURIComponent(sessionKey)}`;
     audioPlayer.load();
   }
-  createJobButton.disabled = false;
-  const playable = source.video ? ["h264", "vp8", "vp9", "av1", "theora"].includes(source.video.codec) : true;
-  byId("control-hint").textContent = operation === "mp3" && !source.audio
-    ? "MP3 extraction needs an audio stream."
-    : playable
-      ? "Ready to add this output to the queue."
-      : "This codec may not preview in your browser; conversion is still available.";
   trimEnd.placeholder = source.duration.toFixed(1);
   renderSources();
   updateTrim();
@@ -133,13 +152,13 @@ function selectSource(source) {
 /** @param {File} file */
 function upload(file) {
   if (file.size > 500 * 1_048_576) {
-    toast("That file is larger than the 500 MB limit.");
+    toast("Bu dosya 500 MB sınırını aşıyor.");
     return;
   }
   const box = byId("upload-progress");
   const progressBar = byId("upload-bar");
   box.classList.remove("hidden");
-  byId("upload-name").textContent = file.name;
+  byId("upload-name").textContent = `${file.name} yükleniyor`;
   byId("upload-percent").textContent = "0%";
   progressBar.style.width = "0%";
   const request = new XMLHttpRequest();
@@ -157,18 +176,18 @@ function upload(file) {
     box.classList.add("hidden");
     try {
       const data = /** @type {ApiResponse} */ (JSON.parse(request.responseText));
-      if (request.status < 200 || request.status >= 300 || !data.source) throw new Error(data.error ?? "Import failed.");
+      if (request.status < 200 || request.status >= 300 || !data.source) throw new Error(data.error ?? "Dosya eklenemedi.");
       sources.unshift(data.source);
       renderSources();
       selectSource(data.source);
-      toast("Imported and inspected successfully.");
+      toast("Dosya eklendi ve incelendi.");
     } catch (error) {
-      toast(error instanceof Error ? error.message : "Import failed.");
+      toast(error instanceof Error ? error.message : "Dosya eklenemedi.");
     }
   };
   request.onerror = () => {
     box.classList.add("hidden");
-    toast("Could not reach the local media server.");
+    toast("Yerel medya sunucusuna ulaşılamadı.");
   };
   request.send(file);
 }
@@ -187,24 +206,74 @@ dropZone.addEventListener("drop", (event) => {
   if (file) upload(file);
 });
 
-/** @type {NodeListOf<HTMLButtonElement>} */ (document.querySelectorAll(".preset")).forEach((button) => {
+presetButtons.forEach((button) => {
   button.addEventListener("click", () => {
-    document.querySelectorAll(".preset").forEach((item) => item.classList.remove("active"));
-    button.classList.add("active");
+    if (button.disabled) return;
     operation = button.dataset.operation === "mp3" ? "mp3" : "convert";
-    if (selected) selectSource(selected);
+    updateTrim();
   });
 });
 
-function updateTrim() {
-  if (!selected) return;
+function readTrim() {
+  if (!selected) return { start: 0, end: null, effectiveEnd: 0, valid: false };
   const start = Number(trimStart.value || 0);
-  const end = Number(trimEnd.value || selected.duration);
-  const left = Math.max(0, Math.min(100, (start / selected.duration) * 100));
-  const right = Math.max(left, Math.min(100, (end / selected.duration) * 100));
+  const end = trimEnd.value === "" ? null : Number(trimEnd.value);
+  const effectiveEnd = end ?? selected.duration;
+  const startFinite = Number.isFinite(start);
+  const endFinite = Number.isFinite(effectiveEnd);
+  const startError = !startFinite || start < 0
+    ? "Başlangıç 0 veya daha büyük olmalı."
+    : start >= effectiveEnd
+      ? "Başlangıç bitişten küçük olmalı."
+      : start >= selected.duration
+        ? "Başlangıç dosya süresini aşamaz."
+        : "";
+  const endError = !endFinite || effectiveEnd <= start
+    ? "Bitiş başlangıçtan büyük olmalı."
+    : effectiveEnd > selected.duration
+      ? "Bitiş dosya süresini aşamaz."
+      : "";
+  trimStartError.textContent = startError;
+  trimEndError.textContent = endError;
+  trimStart.setAttribute("aria-invalid", String(Boolean(startError)));
+  trimEnd.setAttribute("aria-invalid", String(Boolean(endError)));
+  return { start, end, effectiveEnd, valid: !startError && !endError };
+}
+
+function updateControls(trim = readTrim()) {
+  const hasVideo = Boolean(selected?.video);
+  const hasAudio = Boolean(selected?.audio);
+  if (operation === "convert" && !hasVideo && hasAudio) operation = "mp3";
+  if (operation === "mp3" && !hasAudio && hasVideo) operation = "convert";
+  presetButtons.forEach((button) => {
+    const buttonOperation = button.dataset.operation === "mp3" ? "mp3" : "convert";
+    button.disabled = buttonOperation === "convert" ? !hasVideo : !hasAudio;
+    const active = buttonOperation === operation;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  const operationAllowed = operation === "convert" ? hasVideo : hasAudio;
+  createJobButton.disabled = !selected || !trim.valid || !operationAllowed;
+  byId("control-hint").textContent = selected
+    ? `${compatibilityText[selected.compatibility]}. ${operationAllowed ? "İşlem kuyruğa eklenebilir." : "Bu işlem dosyanın akışlarıyla uyumlu değil."}`
+    : "Çıktı seçenekleri için bir dosya ekleyin.";
+}
+
+function updateTrim() {
+  const trim = readTrim();
   const fill = byId("trim-fill");
-  fill.style.left = `${left}%`;
-  fill.style.width = `${right - left}%`;
+  if (!selected) {
+    fill.style.left = "0%";
+    fill.style.width = "100%";
+    trimSummary.textContent = "";
+  } else {
+    const left = Math.max(0, Math.min(100, (trim.start / selected.duration) * 100));
+    const right = Math.max(left, Math.min(100, (trim.effectiveEnd / selected.duration) * 100));
+    fill.style.left = `${left}%`;
+    fill.style.width = `${right - left}%`;
+    trimSummary.textContent = trim.valid ? `Seçilen bölüm: ${duration(trim.effectiveEnd - trim.start)}` : "Kırpma aralığını düzeltin.";
+  }
+  updateControls(trim);
 }
 
 trimStart.addEventListener("input", updateTrim);
@@ -212,17 +281,18 @@ trimEnd.addEventListener("input", updateTrim);
 byId("reset-trim").addEventListener("click", () => { trimStart.value = "0"; trimEnd.value = ""; updateTrim(); });
 createJobButton.addEventListener("click", async () => {
   if (!selected) return;
-  const endText = trimEnd.value;
+  const trim = readTrim();
+  if (!trim.valid) return updateTrim();
   try {
     await api("/api/jobs", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sourceId: selected.id, operation, start: Number(trimStart.value || 0), end: endText ? Number(endText) : null })
+      body: JSON.stringify({ sourceId: selected.id, operation, start: trim.start, end: trim.end })
     });
-    toast("Added to the job queue.");
+    toast("İşlem kuyruğa eklendi.");
     await refreshJobs();
   } catch (error) {
-    toast(error instanceof Error ? error.message : "Could not create job.");
+    toast(error instanceof Error ? error.message : "İşlem başlatılamadı.");
   }
 });
 
@@ -238,18 +308,18 @@ async function refreshJobs() {
 /** @param {JobView[]} items */
 function renderJobs(items) {
   if (!items.length) {
-    jobsView.innerHTML = '<div class="queue-empty"><span>☷</span><strong>Queue is clear</strong><small>Outputs you create will show up here.</small></div>';
+    jobsView.innerHTML = '<div class="queue-empty"><span>☷</span><strong>Kuyruk boş</strong><small>Oluşturduğunuz çıktılar burada görünecek.</small></div>';
     return;
   }
   jobsView.innerHTML = items.slice().reverse().map((job) => {
     const source = sources.find((item) => item.id === job.sourceId);
-    const name = job.outputName ?? `${source?.originalName ?? "Media output"} · ${job.operation === "mp3" ? "MP3" : "MP4"}`;
+    const name = job.outputName ?? `${source?.originalName ?? "Medya çıktısı"} · ${job.operation === "mp3" ? "MP3" : "MP4"}`;
     const action = job.status === "done" && job.downloadUrl
-      ? `<a class="job-action" download href="${safe(job.downloadUrl)}">Download ↓</a>`
+      ? `<a class="job-action" download href="${safe(job.downloadUrl)}">İndir ↓</a>`
       : job.status === "queued" || job.status === "running"
-        ? `<button class="job-action cancel" data-cancel="${job.id}">Cancel</button>`
+        ? `<button type="button" class="job-action cancel" data-cancel="${job.id}">İptal et</button>`
         : "";
-    return `<div class="job-card"><span class="job-icon">${job.operation === "mp3" ? "♫" : "▣"}</span><span class="job-main"><strong>${safe(name)}</strong><small>${safe(source?.originalName ?? "Media output")}${job.error ? ` · ${safe(job.error)}` : ""}</small><span class="job-progress"><i data-progress="${job.progress}"></i></span></span><span class="job-status ${job.status}">${job.status === "running" ? `${job.progress}% · processing` : job.status}</span>${action}</div>`;
+    return `<div class="job-card"><span class="job-icon">${job.operation === "mp3" ? "♫" : "▣"}</span><span class="job-main"><strong>${safe(name)}</strong><small>${safe(source?.originalName ?? "Medya çıktısı")}${job.error ? ` · ${safe(job.error)}` : ""}</small><span class="job-progress"><i data-progress="${job.progress}"></i></span></span><span class="job-status ${job.status}">${job.status === "running" ? `${job.progress}% · işleniyor` : statusText[job.status]}</span>${action}</div>`;
   }).join("");
   /** @type {NodeListOf<HTMLElement>} */ (jobsView.querySelectorAll("[data-progress]")).forEach((bar) => {
     bar.style.width = `${bar.dataset.progress ?? 0}%`;
@@ -262,7 +332,7 @@ function renderJobs(items) {
         await api(`/api/jobs/${jobId}/cancel`, { method: "POST" });
         await refreshJobs();
       } catch (error) {
-        toast(error instanceof Error ? error.message : "Could not cancel job.");
+        toast(error instanceof Error ? error.message : "İşlem iptal edilemedi.");
       }
     });
   });
@@ -275,24 +345,39 @@ async function refreshStatus() {
     const ready = data.ffmpeg === true && data.ffprobe === true;
     const dot = status.querySelector(".status-dot");
     if (dot) dot.classList.add(ready ? "ready" : "error");
-    if (status.lastElementChild) status.lastElementChild.textContent = ready ? "FFmpeg ready" : "FFmpeg setup needed";
-    byId("footer-engine").textContent = ready ? "FFmpeg engine · ready" : "FFmpeg / ffprobe not found — install both to process";
-    if (!ready) toast("Install ffmpeg and ffprobe, then restart Media Studio.");
+    if (status.lastElementChild) status.lastElementChild.textContent = ready ? "FFmpeg hazır" : "FFmpeg kurulumu gerekli";
+    byId("footer-engine").textContent = ready ? "FFmpeg motoru · hazır" : "FFmpeg ve ffprobe bulunamadı · işlem için ikisini de kurun";
+    if (!ready) toast("FFmpeg ve ffprobe kurulduktan sonra Media Studio'yu yeniden başlatın.");
   } catch {
-    if (status.lastElementChild) status.lastElementChild.textContent = "Server unavailable";
+    if (status.lastElementChild) status.lastElementChild.textContent = "Yerel sunucuya ulaşılamıyor";
   }
 }
 
-videoPlayer.addEventListener("error", () => toast("This source cannot be previewed by the browser. MP4 conversion may make it playable."));
-audioPlayer.addEventListener("error", () => toast("This audio codec cannot be previewed by the browser."));
+videoPlayer.addEventListener("error", () => {
+  byId("preview-error-text").textContent = "Tarayıcınız bu dosyayı oynatamıyor. Uyumlu MP4 oluşturabilirsiniz.";
+  convertPreview.classList.remove("hidden");
+  previewError.classList.remove("hidden");
+});
+audioPlayer.addEventListener("error", () => {
+  byId("preview-error-text").textContent = "Tarayıcınız bu ses codec'ini oynatamıyor.";
+  convertPreview.classList.add("hidden");
+  previewError.classList.remove("hidden");
+});
+convertPreview.addEventListener("click", () => {
+  if (!selected?.video) return;
+  operation = "convert";
+  updateTrim();
+  createJobButton.focus();
+});
 
 async function init() {
   try {
     const data = await api("/api/sources");
     sources = data.sources ?? [];
     renderSources();
+    updateTrim();
   } catch {
-    toast("Start the local Media Studio server to begin.");
+    toast("Başlamak için yerel Media Studio sunucusunu çalıştırın.");
   }
   await refreshStatus();
   await refreshJobs();

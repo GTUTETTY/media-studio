@@ -2,6 +2,8 @@
 
 Media Studio is a small, local-only browser UI for importing media, inspecting it with `ffprobe`, trimming it, converting video to browser-friendly H.264/AAC MP4, and extracting MP3 audio with FFmpeg.
 
+The compatibility conversion re-encodes media and can be lossy. The current encoder uses CPU-based `libx264`; hardware acceleration is not enabled.
+
 ## Launch
 
 Requirements: Node.js 24 or newer, plus `ffmpeg` and `ffprobe` available on `PATH`.

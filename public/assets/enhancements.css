@@ -1,0 +1,152 @@
+.media-meta {
+  margin: 14px 0 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 18px;
+  height: auto;
+  color: #8b8495;
+}
+
+.media-meta div {
+  min-width: 0;
+}
+
+.media-meta dt {
+  color: #6f6979;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.media-meta dd {
+  margin: 2px 0 0;
+  color: #b8b1c0;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.preset:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.preset:disabled:hover {
+  border-color: #332f3c;
+}
+
+.trim-fields label {
+  position: static;
+}
+
+.number-field {
+  position: relative;
+}
+
+.number-field span {
+  position: absolute;
+  right: 8px;
+  bottom: 10px;
+  color: #625c6b;
+  font-size: 10px;
+  letter-spacing: 0;
+}
+
+.field-error {
+  display: block;
+  min-height: 27px;
+  padding-top: 4px;
+  color: var(--danger);
+  font-size: 9px;
+  letter-spacing: 0;
+  line-height: 1.25;
+}
+
+.trim-line {
+  margin: 8px 5px 7px;
+  overflow: hidden;
+}
+
+.trim-line i {
+  position: absolute;
+}
+
+.trim-summary {
+  min-height: 16px;
+  margin: 0 0 20px;
+  color: #827b8d;
+  font-size: 10px;
+  text-align: center;
+}
+
+.preview-error {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  width: min(420px, calc(100% - 30px));
+  padding: 15px;
+  border: 1px solid #665785;
+  border-radius: 7px;
+  background: #18151fef;
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.preview-error strong {
+  display: block;
+  font-size: 12px;
+}
+
+.preview-error p {
+  margin: 5px 0 11px;
+  color: #aaa2b2;
+  font-size: 11px;
+}
+
+.secondary-button {
+  padding: 8px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: #2b253b;
+  color: var(--accent-hi);
+  font: 600 11px inherit;
+  cursor: pointer;
+}
+
+.source-card:focus-visible,
+.preset:focus-visible,
+.trim-fields input:focus-visible,
+.primary-button:focus-visible,
+.secondary-button:focus-visible,
+.text-button:focus-visible,
+.job-action:focus-visible {
+  outline: 2px solid var(--accent-hi);
+  outline-offset: 2px;
+}
+
+@media (max-width: 700px) {
+  .media-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .job-card {
+    grid-template-columns: 30px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .job-status,
+  .job-action {
+    grid-column: 2;
+    text-align: left;
+  }
+
+  .job-main {
+    min-width: 0;
+  }
+
+  .job-main strong,
+  .job-main small {
+    overflow-wrap: anywhere;
+  }
+}

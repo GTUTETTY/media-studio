@@ -33,11 +33,12 @@ export interface SourceRecord {
   filePath: string;
   duration: number;
   format: string;
-  video: { codec: string; width: number; height: number } | null;
+  video: { codec: string; width: number; height: number; fps: number | null } | null;
   audio: { codec: string; channels: number; sampleRate: number } | null;
 }
 
 export type MediaOperation = "convert" | "mp3";
+export type Compatibility = "playable" | "uncertain" | "convert-recommended";
 
 export interface MediaOperationRequest {
   sourceId: string;
@@ -97,6 +98,37 @@ export function validateOperation(value: unknown): MediaOperationRequest | null 
   return { sourceId: input.sourceId, operation: input.operation, start, end };
 }
 
+export function validateTrimRange(start: number, end: number | null, duration: number): boolean {
+  if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(start) || start < 0 || start >= duration) return false;
+  return end === null || (Number.isFinite(end) && end > start && end <= duration);
+}
+
+export function parseFrameRate(value: unknown): number | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const text = String(value).trim();
+  if (!text || text === "0/0") return null;
+  const fraction = /^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/.exec(text);
+  const parsed = fraction ? Number(fraction[1]) / Number(fraction[2]) : Number(text);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+export function classifyCompatibility(source: Pick<SourceRecord, "format" | "video" | "audio">): Compatibility {
+  const container = source.format.split(",", 1)[0]?.toLowerCase() ?? "";
+  const videoCodec = source.video?.codec.toLowerCase() ?? "";
+  const audioCodec = source.audio?.codec.toLowerCase() ?? "";
+  if (!source.video) {
+    if (!source.audio) return "convert-recommended";
+    if ((container === "mp3" && audioCodec === "mp3") || (container === "wav" && audioCodec === "pcm_s16le")) return "playable";
+    if ((container === "ogg" && ["vorbis", "opus"].includes(audioCodec)) || (container === "webm" && ["opus", "vorbis"].includes(audioCodec))) return "playable";
+    if (["aac", "mp3", "opus", "vorbis", "flac", "pcm_s16le"].includes(audioCodec)) return "uncertain";
+    return "convert-recommended";
+  }
+  if (container === "webm" && ["vp8", "vp9", "av1"].includes(videoCodec) && (!source.audio || ["opus", "vorbis"].includes(audioCodec))) return "playable";
+  if (["mp4", "mov", "m4v"].includes(container) && videoCodec === "h264" && (!source.audio || ["aac", "mp3"].includes(audioCodec))) return "playable";
+  if (["h264", "vp8", "vp9", "av1", "theora"].includes(videoCodec)) return "uncertain";
+  return "convert-recommended";
+}
+
 export function buildFfmpegArgs(source: SourceRecord, operation: MediaOperationRequest, outputPath: string): string[] {
   const args = ["-hide_banner", "-loglevel", "error", "-nostdin", "-n", "-protocol_whitelist", "file,pipe"];
   if (operation.start > 0) args.push("-ss", String(operation.start));
@@ -134,9 +166,9 @@ function error(response: ServerResponse, status: number, message: string): void 
   json(response, status, { error: message });
 }
 
-function publicSource(source: SourceRecord): Omit<SourceRecord, "filePath"> {
+function publicSource(source: SourceRecord): Omit<SourceRecord, "filePath"> & { compatibility: Compatibility } {
   const { filePath: _, ...safe } = source;
-  return safe;
+  return { ...safe, compatibility: classifyCompatibility(source) };
 }
 
 function publicJob(job: JobRecord): Omit<JobRecord, "process" | "cancelRequested" | "outputPath"> & { downloadUrl: string | null } {
@@ -224,7 +256,7 @@ async function probeFile(filePath: string): Promise<{ duration: number; format: 
         resolveResult({
           duration,
           format: parsed.format?.format_name ?? "unknown",
-          video: videoStream ? { codec: String(videoStream.codec_name ?? "unknown"), width: Number(videoStream.width ?? 0), height: Number(videoStream.height ?? 0) } : null,
+          video: videoStream ? { codec: String(videoStream.codec_name ?? "unknown"), width: Number(videoStream.width ?? 0), height: Number(videoStream.height ?? 0), fps: parseFrameRate(videoStream.avg_frame_rate) ?? parseFrameRate(videoStream.r_frame_rate) } : null,
           audio: audioStream ? { codec: String(audioStream.codec_name ?? "unknown"), channels: Number(audioStream.channels ?? 0), sampleRate: Number(audioStream.sample_rate ?? 0) } : null
         });
       } catch (cause) { finishReject(new Error(cause instanceof Error ? cause.message : "Invalid ffprobe output")); }
@@ -382,15 +414,15 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   if (parsed.pathname === "/api/sources" && request.method === "POST") {
     const type = ((header(request, "content-type") ?? "").split(";", 1)[0] ?? "").toLowerCase();
     const declaredLength = Number(header(request, "content-length") ?? 0);
-    if (!allowedContentTypes.has(type)) return error(response, 415, "Choose a supported audio or video file");
-    if (declaredLength > MAX_UPLOAD_BYTES) return error(response, 413, "Upload exceeds the 500 MB limit");
+    if (!allowedContentTypes.has(type)) return error(response, 415, "Desteklenen bir ses veya video dosyası seçin");
+    if (declaredLength > MAX_UPLOAD_BYTES) return error(response, 413, "Dosya 500 MB sınırını aşıyor");
     const id = randomUUID();
     const tempPath = join(SOURCE_ROOT, `${id}.upload`);
     const outputPath = join(SOURCE_ROOT, `${id}.source`);
     const limiter = new LimitTransform(MAX_UPLOAD_BYTES);
     try {
       await pipeline(request, limiter, createWriteStream(tempPath, { flags: "wx" }));
-      if (limiter.bytes === 0) throw new Error("The selected file is empty");
+      if (limiter.bytes === 0) throw new Error("Seçilen dosya boş");
       const probed = await probeFile(tempPath);
       try { await access(outputPath); throw new Error("Source ID collision"); } catch (cause) { if (cause instanceof Error && cause.message === "Source ID collision") throw cause; }
       await rename(tempPath, outputPath);
@@ -408,7 +440,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   const sourceId = sourceMatch?.[1];
   if (sourceMatch && sourceId && request.method === "GET" && isOpaqueId(sourceId)) {
     const source = sources.get(sourceId);
-    return source ? json(response, 200, { source: publicSource(source) }) : error(response, 404, "Source not found");
+    return source ? json(response, 200, { source: publicSource(source) }) : error(response, 404, "Kaynak dosya bulunamadı");
   }
   if (parsed.pathname === "/api/jobs" && request.method === "GET") return json(response, 200, { jobs: [...jobs.values()].map(publicJob) });
   if (parsed.pathname === "/api/jobs" && request.method === "POST") {
@@ -416,14 +448,14 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
       const type = ((header(request, "content-type") ?? "").split(";", 1)[0] ?? "").toLowerCase();
       if (type !== "application/json") return error(response, 415, "Jobs require application/json");
       const operation = validateOperation(await readJson(request));
-      if (!operation) return error(response, 400, "Invalid operation or trim range");
+      if (!operation) return error(response, 400, "İşlem veya kırpma aralığı geçersiz");
       const source = sources.get(operation.sourceId);
-      if (!source) return error(response, 404, "Source not found");
-      if (operation.operation === "mp3" && !source.audio) return error(response, 422, "MP3 extraction needs an audio stream");
-      if (operation.start >= source.duration) return error(response, 400, "Trim start is longer than the source");
-      if (operation.end !== null && operation.end > source.duration) return error(response, 400, "Trim end is longer than the source");
+      if (!source) return error(response, 404, "Kaynak dosya bulunamadı");
+      if (operation.operation === "mp3" && !source.audio) return error(response, 422, "MP3 çıkarmak için ses akışı gerekli");
+      if (operation.operation === "convert" && !source.video) return error(response, 422, "Yalnız ses içeren dosyada MP4 video oluşturulamaz");
+      if (!validateTrimRange(operation.start, operation.end, source.duration)) return error(response, 400, "Kırpma aralığı dosya süresi içinde olmalı");
       const unfinishedJobs = [...jobs.values()].filter((job) => job.status === "queued" || job.status === "running").length;
-      if (unfinishedJobs >= 100) return error(response, 429, "Queue limit reached; cancel or finish existing jobs first");
+      if (unfinishedJobs >= 100) return error(response, 429, "Kuyruk sınırına ulaşıldı; yeni işlem eklemeden önce mevcut işleri tamamlayın veya iptal edin");
       const job: JobRecord = { id: randomUUID(), sourceId: source.id, operation: operation.operation, start: operation.start, end: operation.end, status: "queued", progress: 0, outputPath: null, outputName: null, error: null, createdAt: new Date().toISOString(), startedAt: null, finishedAt: null };
       jobs.set(job.id, job);
       enqueueJob(job, source);
@@ -434,7 +466,7 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   const cancelId = cancelMatch?.[1];
   if (cancelMatch && cancelId && request.method === "POST" && isOpaqueId(cancelId)) {
     const job = jobs.get(cancelId);
-    if (!job) return error(response, 404, "Job not found");
+    if (!job) return error(response, 404, "İş bulunamadı");
     if (job.status === "queued") { job.status = "cancelled"; job.finishedAt = new Date().toISOString(); }
     else if (job.status === "running" && job.process) { job.cancelRequested = true; job.process.kill("SIGTERM"); }
     return json(response, 200, { job: publicJob(job) });
@@ -443,13 +475,13 @@ async function handle(request: IncomingMessage, response: ServerResponse): Promi
   const mediaId = mediaMatch?.[1];
   if (mediaMatch && mediaId && request.method === "GET" && isOpaqueId(mediaId) && apiKeyIsValid(request, key)) {
     const source = sources.get(mediaId);
-    return source ? streamFile(request, response, source.filePath, source.originalName) : error(response, 404, "Source not found");
+    return source ? streamFile(request, response, source.filePath, source.originalName) : error(response, 404, "Kaynak dosya bulunamadı");
   }
   const downloadMatch = /^\/download\/([^/]+)$/.exec(parsed.pathname);
   const downloadId = downloadMatch?.[1];
   if (downloadMatch && downloadId && request.method === "GET" && isOpaqueId(downloadId) && apiKeyIsValid(request, key)) {
     const job = jobs.get(downloadId);
-    if (!job || job.status !== "done" || !job.outputPath || !job.outputName) return error(response, 404, "Completed output not found");
+    if (!job || job.status !== "done" || !job.outputPath || !job.outputName) return error(response, 404, "Tamamlanmış çıktı bulunamadı");
     return streamFile(request, response, job.outputPath, job.outputName, true);
   }
   return error(response, 404, "Not found");
